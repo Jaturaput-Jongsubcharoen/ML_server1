@@ -13,9 +13,10 @@ Created on Sun Mar 30 15:38:46 2025
 from flask import Flask, request, jsonify
 from flask_cors import CORS 
 import numpy as np
-import joblib
+import joblib  # 5.2 we'll use this to load the model
 
 # 5.2 Load the serialized models
+# Make sure the model files are in the same folder as this script
 models = {
     "random_forest": joblib.load("random_forest_model.pkl"),
     "svm": joblib.load("svm_model.pkl"),
@@ -24,76 +25,56 @@ models = {
     "linear_regression": joblib.load("linear_regression_model.pkl")
 }
 
-# Define expected number of total features (after backend encoding of injury + pedcond)
+# Define the expected number of features for safety check (e.g., 10 categorical features after OneHotEncoding)
+# Replace this with the actual number if known (e.g., 43 if one-hot created 43 columns)
 EXPECTED_NUM_FEATURES = models["logistic_regression"].n_features_in_
 
-# Create the Flask app
+# Create the Flask app instance
 app = Flask(__name__)
 CORS(app)
 
-# 5.3 Home route
+# 5.3 Home route to confirm the server is running
 @app.route('/')
 def home():
     return "Multiple ML Models API is running!"
 
-# 5.4 /predict route
+# 5.4 /predict route to receive input and return prediction
 @app.route('/predict', methods=['POST'])
 def predict():
+    # Expect JSON data in the form: { "model_name": "svm", "features": [val1, val2, ..., valN] }
     data = request.get_json(force=True)
     model_name = data.get("model_name")
-    input_data = data.get("input", {})
+    features = data.get("features", [])
 
-    # Expected model check
+    # Input validation
     if model_name not in models:
         return jsonify({"error": "Invalid model name"}), 400
 
-    # Manually define all expected one-hot encoded feature names
-    expected_features = [
-        'STREET1_LAWRENCE AVE E',
-        'STREET2_E OF DVP ON RAMP Aven',
-        'OFFSET_10 m West of',
-        'DISTRICT_Toronto and East York',
-        'IMPACTYPE_Pedestrian Collisions',
-        'INJURY_Fatal',
-        'INJURY_Major',
-        'PEDCOND_Unknown',
-        'PEDCOND_Normal',
-        'DRIVCOND_Unknown'
-    ]
+    if not isinstance(features, list) or len(features) != EXPECTED_NUM_FEATURES:
+        return jsonify({"error": f"Expected {EXPECTED_NUM_FEATURES} features, but got {len(features)}"}), 400
 
-    # One-hot encode input
-    encoded_vector = []
-    for feature in expected_features:
-        # Get prefix and value from feature name (e.g., STREET1 and LAWRENCE AVE E)
-        try:
-            col, val = feature.split("_", 1)
-        except:
-            return jsonify({"error": f"Feature format error in: {feature}"}), 400
-
-        # If user's selected value for the column matches this encoded column
-        if input_data.get(col) == val:
-            encoded_vector.append(1)
-        else:
-            encoded_vector.append(0)
-
-    if len(encoded_vector) != len(expected_features):
-        return jsonify({"error": "Incorrect number of features"}), 400
-
-    # Predict
+    # Reshape input into 2D array
+    features_array = np.array(features).reshape(1, -1)
     model = models[model_name]
-    features_array = np.array(encoded_vector).reshape(1, -1)
+
+    # Generate prediction
     prediction = model.predict(features_array)[0]
 
+    # Special handling for Linear Regression to convert float output to class
     if model_name == "linear_regression":
         prediction = int(prediction > 0.5)
     else:
         prediction = int(prediction) if not isinstance(prediction, np.ndarray) else prediction.tolist()
 
+    # Return prediction result
     return jsonify({
         "model": model_name,
         "prediction": prediction
     })
 
-# 5.5 Run Flask server
+# 5.5 Deploy model on localhost
 if __name__ == '__main__':
+    # Run the Flask app
+    # Open your browser at http://127.0.0.1:5000 to see it working
     app.run(debug=True)
+    

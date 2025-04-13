@@ -2,7 +2,7 @@
 """
 Created on Wed Mar 19 20:20:45 2025
 
-@author: KSI_Group_5_section_1COMP247Project 
+@author: KSI_Group_5_section_1COMP247Project
 """
 
 #these are the imports we will use for the model
@@ -290,76 +290,60 @@ preprocessor = ColumnTransformer([
 
 # -----------------------------------------------------------------------------
 # -----------------------------------------------------------------------------
-# 2.2. Feature selection – (Choosing relevant CATEGORICAL features only)
+# 2.2. Feature selection – Choosing relevant columns
 from sklearn.impute import SimpleImputer
-from sklearn.preprocessing import OneHotEncoder
 from sklearn.feature_selection import SelectKBest, f_classif
-from sklearn.pipeline import Pipeline
-from sklearn.compose import ColumnTransformer
-import pandas as pd
 import numpy as np
+import pandas as pd
 
-# Step 1: Define the target variable
-y = Group_data["ACCLASS"].apply(lambda x: 1 if x == "Fatal" else 0)
+# Define input features and target variable
+# Use "ACCLASS" as the target column (based on earlier parts of the script)
+X = Group_data.drop(columns=["ACCLASS"], errors="ignore")  # Drop target column
+y = Group_data["ACCLASS"].apply(lambda x: 1 if x == "Fatal" else 0)  # Convert target to binary (1: Fatal, 0: Non-Fatal)
 
-# Step 2: Get categorical columns only
-categorical_cols = Group_data.select_dtypes(include=['object']).columns.tolist()
+# Identify non-numeric columns
+non_numeric_cols = X.select_dtypes(exclude=['int64', 'float64']).columns
 
-# Step 3: Drop 'ACCLASS' from input features to prevent data leakage
-X = Group_data[categorical_cols].drop(columns=["ACCLASS"], errors="ignore")
+# Print columns that need conversion or removal
+if len(non_numeric_cols) > 0:
+    print("\nNon-numeric columns found (these must be removed or converted):")
+    print(non_numeric_cols)
 
-# Step 4: Recalculate categorical column list (used by encoder)
-categorical_cols = X.columns.tolist()
+# Drop non-numeric columns (like timestamps) before feature selection
+X_clean = X.drop(columns=non_numeric_cols, errors="ignore")
 
-# Step 5: Create preprocessing pipeline for categorical data
-categorical_pipeline = Pipeline(steps=[
-    ("imputer", SimpleImputer(strategy="most_frequent")),
-    ("encoder", OneHotEncoder(handle_unknown="ignore", sparse_output=False))  # use sparse_output for sklearn >=1.2
-])
+# Check for NaN values before imputation
+print("\nChecking for missing values before imputation:")
+print(X_clean.isnull().sum()[X_clean.isnull().sum() > 0])
 
-preprocessor = ColumnTransformer(transformers=[
-    ("cat", categorical_pipeline, categorical_cols)
-])
+# Drop irrelevant columns (if they exist)
+irrelevant_cols = ["OBJECTID", "INDEX", "ACCNUM"]
+X_clean = X_clean.drop(columns=irrelevant_cols, errors="ignore")
 
-# Step 6: Apply the pipeline to X (not full Group_data)
-X_preprocessed = preprocessor.fit_transform(X)
+# Handle missing values by filling NaN with the median (for numerical columns)
+imputer = SimpleImputer(strategy="median")
+X_imputed = pd.DataFrame(imputer.fit_transform(X_clean), columns=X_clean.columns)
 
-# Step 7: Apply SelectKBest to get top k categorical features
-selector = SelectKBest(score_func=f_classif, k=min(10, X_preprocessed.shape[1]))
-X_selected = selector.fit_transform(X_preprocessed, y)
+# Check if any NaN values remain after imputation
+if np.isnan(X_imputed).sum().sum() > 0:
+    print("\nERROR: NaN values still present after imputation!")
+    print(X_imputed.isnull().sum()[X_imputed.isnull().sum() > 0])
+else:
+    print("\nAll missing values successfully handled.")
 
-# Step 8: Get encoded feature names from the encoder
-encoded_feature_names = preprocessor.named_transformers_['cat']['encoder'].get_feature_names_out(categorical_cols)
+# Ensure all values are finite (no NaN or Inf)
+X_imputed = X_imputed.replace([np.inf, -np.inf], np.nan)  # Replace infinite values with NaN
+X_imputed = X_imputed.dropna()  # Drop any rows that still contain NaN
 
-# Step 9: Map selected feature names to scores
-selected_columns = encoded_feature_names[selector.get_support()].tolist()
-selected_scores = selector.scores_[selector.get_support()]
-selected_feature_df = pd.DataFrame({
-    "Feature": selected_columns,
-    "F-Score": selected_scores
-}).sort_values(by="F-Score", ascending=False)
+# Feature selection using ANOVA F-test (Select Top 10 Features)
+feature_selector = SelectKBest(score_func=f_classif, k=min(10, X_imputed.shape[1]))  # Ensure k ≤ total features
+X_selected = feature_selector.fit_transform(X_imputed, y.loc[X_imputed.index])  # Ensure y is aligned
 
-# Save for later use (SMOTE, modeling, etc.)
-selected_feature_names = selected_columns
+# Print selected feature scores
+feature_scores = pd.DataFrame({"Feature": X_clean.columns, "Score": feature_selector.scores_})
+print("\nFeature Selection Scores:")
+print(feature_scores.sort_values(by="Score", ascending=False))
 
-# Step 10: Print results
-print("\nSelected Top K Categorical Features Used for Training:")
-for col in selected_columns:
-    print("-", col)
-
-print("\nF-Scores of Selected Categorical Features:")
-print(selected_feature_df)
-
-# Optional: Print the least useful features (full list sorted ascending)
-full_feature_scores = pd.DataFrame({
-    "Feature": encoded_feature_names,
-    "F-Score": selector.scores_
-}).sort_values(by="F-Score", ascending=True)
-
-print("\nBottom Categorical Features by F-Score (Least Useful):")
-print(full_feature_scores.head(10))
-
-# -----------------------------------------------------------------------------
 # -----------------------------------------------------------------------------
 # 2.3. Train, Test data splitting – Using train_test_split
 from sklearn.model_selection import train_test_split
@@ -378,7 +362,7 @@ from collections import Counter
 # Convert X_train back to a DataFrame if it's a NumPy array (before SMOTE)
 if isinstance(X_train, np.ndarray):  
     print("Warning: X_train is a NumPy array. Converting back to DataFrame...")
-    X_train = pd.DataFrame(X_train, columns=selected_columns)  # Restore original feature names
+    X_train = pd.DataFrame(X_train, columns=X_clean.columns)  # Restore original feature names
 
 # Save feature names before SMOTE
 feature_names = X_train.columns
@@ -400,19 +384,27 @@ print("\nClass distribution in training data after SMOTE balancing:", Counter(y_
 print("\nWARNING: Applying SMOTE to testing data may distort evaluation metrics.")
 print("This is not a standard practice and may lead to biased results.")
 
-# Convert X_test to DataFrame if needed
+# Convert X_test back to a DataFrame if it's a NumPy array
 if isinstance(X_test, np.ndarray):
     X_test = pd.DataFrame(X_test, columns=feature_names)
 
-# Check class distribution in real test set
-print("\nClass distribution in testing data (no SMOTE applied):", Counter(y_test))
+# Check class distribution before balancing (Testing Data)
+print("\nClass distribution in testing data before balancing:", Counter(y_test))
+
+# Apply SMOTE for oversampling (Testing Data)
+X_test_balanced, y_test_balanced = smote.fit_resample(X_test, y_test)
+
+# Convert X_test_balanced back to DataFrame with original column names
+X_test_balanced = pd.DataFrame(X_test_balanced, columns=feature_names)
+
+# Check class distribution after balancing (Testing Data)
+print("\nClass distribution in testing data after SMOTE balancing:", Counter(y_test_balanced))
 
 # Verify columns before transforming
 print("\nColumns in X_train_balanced after SMOTE and feature selection:", X_train_balanced.columns)
-print("\nColumns in X_test after feature selection (real test set):", X_test.columns)
-# -----------------------------------------------------------------------------
+print("\nColumns in X_test_balanced after SMOTE and feature selection:", X_test_balanced.columns)
 
-"""
+# -----------------------------------------------------------------------------
 # 2.5. Using Pipelines to streamline preprocessing
 from sklearn.pipeline import Pipeline
 from sklearn.compose import ColumnTransformer
@@ -468,8 +460,6 @@ print("\nPreview of Transformed Training Data:")
 print(pd.DataFrame(X_train_transformed).head())
 print("\nPreview of Transformed Test Data:")
 print(pd.DataFrame(X_test_transformed).head())
-"""
-
 # -----------------------------------------------------------------------------  
 # 3. Predictive model building  
 # -----------------------------------------------------------------------------  
@@ -488,82 +478,82 @@ models = {
     "Linear Regression": LinearRegression()  
 }  
 
-print("Baseline Model Evaluation:\n")
-for name, model in models.items():
-    model.fit(X_train_balanced, y_train_balanced)
-    y_pred = model.predict(X_test)  # Use unbalanced, real test set
+print("Baseline Model Evaluation:\n")  
+for name, model in models.items():  
+    model.fit(X_train_balanced, y_train_balanced)  
+    y_pred = model.predict(X_test_balanced)  
 
-    # Threshold Linear Regression outputs to get class labels
-    if name == "Linear Regression":
-        y_pred = (y_pred > 0.5).astype(int)
+    # Threshold Linear Regression outputs to get class labels  
+    if name == "Linear Regression":  
+        y_pred = (y_pred > 0.5).astype(int)  
 
-    acc = accuracy_score(y_test, y_pred)
-    print("\n")
-    print(f"{name} - Accuracy: {acc:.4f}")
-    print("Confusion Matrix:")
-    print(confusion_matrix(y_test, y_pred))
-    print("Classification Report:")
-    print(classification_report(y_test, y_pred))
+    acc = accuracy_score(y_test_balanced, y_pred)  
+    print("\n")  
+    print(f"{name} - Accuracy: {acc:.4f}")  
+    print("Confusion Matrix:")  
+    print(confusion_matrix(y_test_balanced, y_pred))  
+    print("Classification Report:")  
+    print(classification_report(y_test_balanced, y_pred))  
 
-# -----------------------------------------------------------------------------
-# 4. Model scoring and evaluation
-# -----------------------------------------------------------------------------
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_curve, auc
-import matplotlib.pyplot as plt
+# -----------------------------------------------------------------------------  
+# 4. Model scoring and evaluation  
+# -----------------------------------------------------------------------------  
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_curve, auc  
+import matplotlib.pyplot as plt  
 
-# 4.1 Present results using accuracy, precision, recall, F1 score, confusion matrix, and ROC curves
-model_scores = {}
+# 4.1 Present results using accuracy, precision, recall, F1 score, confusion matrix, and ROC curves  
+model_scores = {}  
 
-plt.figure(figsize=(8, 6))  # Setup for ROC plot
+plt.figure(figsize=(8, 6))  # Setup for ROC plot  
 
-for name, model in models.items():
-    y_pred = model.predict(X_test)
+for name, model in models.items():  
+    y_pred = model.predict(X_test_balanced)  
 
-    if name == "Linear Regression":
-        y_pred = (y_pred > 0.5).astype(int)
+    if name == "Linear Regression":  
+        y_pred = (y_pred > 0.5).astype(int)  
 
-    # Predict probabilities or decision scores
-    if hasattr(model, "predict_proba"):
-        y_proba = model.predict_proba(X_test)[:, 1]
-    elif hasattr(model, "decision_function"):
-        y_proba = model.decision_function(X_test)
-    elif name == "Linear Regression":
-        y_proba = model.predict(X_test)
-    else:
-        y_proba = y_pred  # fallback
+    # Predict probabilities or decision scores  
+    if hasattr(model, "predict_proba"):  
+        y_proba = model.predict_proba(X_test_balanced)[:, 1]  
+    elif hasattr(model, "decision_function"):  
+        y_proba = model.decision_function(X_test_balanced)  
+    elif name == "Linear Regression":  
+        y_proba = model.predict(X_test_balanced)  
+    else:  
+        y_proba = y_pred  # fallback  
 
-    # Calculate metrics
-    acc = accuracy_score(y_test, y_pred)
-    prec = precision_score(y_test, y_pred)
-    rec = recall_score(y_test, y_pred)
-    f1 = f1_score(y_test, y_pred)
+    # Calculate metrics  
+    acc = accuracy_score(y_test_balanced, y_pred)  
+    prec = precision_score(y_test_balanced, y_pred)  
+    rec = recall_score(y_test_balanced, y_pred)  
+    f1 = f1_score(y_test_balanced, y_pred)  
 
-    model_scores[name] = {"Accuracy": acc, "Precision": prec, "Recall": rec, "F1 Score": f1}
+    model_scores[name] = {"Accuracy": acc, "Precision": prec, "Recall": rec, "F1 Score": f1}  
 
-    print("\n")
-    print("----------------------------------------")
-    print(f"{name}")
-    print("Confusion Matrix:")
-    print(confusion_matrix(y_test, y_pred))
-    print("Classification Report:")
-    print(classification_report(y_test, y_pred))
-    print("----------------------------------------")
+    print("\n")  
+    print("----------------------------------------")  
+    print(f"{name}")  
+    print("Confusion Matrix:")  
+    print(confusion_matrix(y_test_balanced, y_pred))  
+    print("Classification Report:")  
+    print(classification_report(y_test_balanced, y_pred))  
+    print("----------------------------------------")  
 
-    # Plot ROC Curve
-    fpr, tpr, _ = roc_curve(y_test, y_proba)
-    roc_auc = auc(fpr, tpr)
-    plt.plot(fpr, tpr, label=f"{name} (AUC = {roc_auc:.2f})")
+    # Plot ROC Curve  
+    fpr, tpr, _ = roc_curve(y_test_balanced, y_proba)  
+    roc_auc = auc(fpr, tpr)  
+    plt.plot(fpr, tpr, label=f"{name} (AUC = {roc_auc:.2f})")  
 
-# Finalize ROC plot
-plt.plot([0, 1], [0, 1], 'k--', label="Random (AUC = 0.50)")  # Baseline
-plt.xlabel("False Positive Rate")
-plt.ylabel("True Positive Rate")
-plt.title("ROC Curve Comparison")
-plt.legend(loc="lower right")
-plt.grid()
-plt.tight_layout()
-plt.show()
-print("----------------------------------------")
+# Finalize ROC plot  
+plt.plot([0, 1], [0, 1], 'k--', label="Random (AUC = 0.50)")  # Baseline  
+plt.xlabel("False Positive Rate")  
+plt.ylabel("True Positive Rate")  
+plt.title("ROC Curve Comparison")  
+plt.legend(loc="lower right")  
+plt.grid()  
+plt.tight_layout()  
+plt.show()  
+print("----------------------------------------")  
 
 # -----------------------------------------------------------------------------  
 # 4.2 Select and Recommend the Best Performing Model  
@@ -604,12 +594,21 @@ print("Linear Regression model saved as 'linear_regression_model.pkl'")
 print("----------------------------------------")
 
 
+print("\nColumns Used for Feature Selection:")
+print(X_clean.columns.tolist())
 
-# print("Top 5 STREET1 values used the most:")
-# print(Group_data["STREET1"].value_counts().head(5))
 
-# print("Top 5 STREET2 values used the most:")
-# print(Group_data["STREET2"].value_counts().head(5))
 
-# print("Top 5 OFFSET values used the most:")
-# print(Group_data["OFFSET"].value_counts().head(5))
+
+
+
+
+
+
+
+
+
+
+
+
+
