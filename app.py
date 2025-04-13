@@ -11,7 +11,7 @@ Created on Sun Mar 30 15:38:46 2025
 
 # 5.1 Flask API to serve the trained model
 from flask import Flask, request, jsonify
-from flask_cors import CORS 
+from flask_cors import CORS
 import numpy as np
 import joblib
 
@@ -24,8 +24,21 @@ models = {
     "linear_regression": joblib.load("linear_regression_model.pkl")
 }
 
-# Define expected number of total features (after backend encoding of injury + pedcond)
-EXPECTED_NUM_FEATURES = models["logistic_regression"].n_features_in_
+# Use the logistic regression model's feature names
+expected_features = [
+    'STREET1_LAWRENCE AVE E',
+    'STREET2_E OF DVP ON RAMP Aven',
+    'OFFSET_10 m West of',
+    'DISTRICT_Toronto and East York',
+    'IMPACTYPE_Pedestrian Collisions',
+    'INJURY_Fatal',
+    'INJURY_Major',
+    'PEDCOND_Unknown',
+    'PEDCOND_Normal',
+    'DRIVCOND_Unknown'
+]
+
+EXPECTED_NUM_FEATURES = len(expected_features)
 
 # Create the Flask app
 app = Flask(__name__)
@@ -43,56 +56,45 @@ def predict():
     model_name = data.get("model_name")
     input_data = data.get("input", {})
 
-    # Expected model check
     if model_name not in models:
         return jsonify({"error": "Invalid model name"}), 400
 
-    # Manually define all expected one-hot encoded feature names
-    expected_features = [
-        'STREET1_LAWRENCE AVE E',
-        'STREET2_E OF DVP ON RAMP Aven',
-        'OFFSET_10 m West of',
-        'DISTRICT_Toronto and East York',
-        'IMPACTYPE_Pedestrian Collisions',
-        'INJURY_Fatal',
-        'INJURY_Major',
-        'PEDCOND_Unknown',
-        'PEDCOND_Normal',
-        'DRIVCOND_Unknown'
-    ]
-
-    # One-hot encode input
+    # Manual one-hot encoding
     encoded_vector = []
     for feature in expected_features:
-        # Get prefix and value from feature name (e.g., STREET1 and LAWRENCE AVE E)
         try:
             col, val = feature.split("_", 1)
         except:
             return jsonify({"error": f"Feature format error in: {feature}"}), 400
 
-        # If user's selected value for the column matches this encoded column
-        if input_data.get(col) == val:
-            encoded_vector.append(1)
+        encoded_vector.append(1 if input_data.get(col) == val else 0)
+
+    if len(encoded_vector) != EXPECTED_NUM_FEATURES:
+        return jsonify({
+            "error": f"Expected {EXPECTED_NUM_FEATURES} features, but got {len(encoded_vector)}"
+        }), 400
+    
+    try:
+        import warnings
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            features_array = np.array([encoded_vector])
+            prediction = models[model_name].predict(features_array)[0]
+
+        if model_name == "linear_regression":
+            prediction = int(prediction > 0.5)
         else:
-            encoded_vector.append(0)
+            prediction = int(prediction)
 
-    if len(encoded_vector) != len(expected_features):
-        return jsonify({"error": "Incorrect number of features"}), 400
+        return jsonify({
+            "model": model_name,
+            "prediction": prediction
+        })
 
-    # Predict
-    model = models[model_name]
-    features_array = np.array(encoded_vector).reshape(1, -1)
-    prediction = model.predict(features_array)[0]
-
-    if model_name == "linear_regression":
-        prediction = int(prediction > 0.5)
-    else:
-        prediction = int(prediction) if not isinstance(prediction, np.ndarray) else prediction.tolist()
-
-    return jsonify({
-        "model": model_name,
-        "prediction": prediction
-    })
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": f"Prediction failed: {str(e)}"}), 500
 
 # 5.5 Run Flask server
 if __name__ == '__main__':
