@@ -481,12 +481,12 @@ from sklearn.metrics import accuracy_score, classification_report, confusion_mat
 
 # Store models  
 models = {  
-    "Logistic Regression": LogisticRegression(max_iter=1000),  
-    "Random Forest": RandomForestClassifier(),  
-    "SVM": SVC(probability=True),  # Set probability=True for ROC  
-    "Neural Network": MLPClassifier(max_iter=1000),  
-    "Linear Regression": LinearRegression()  
-}  
+    "Logistic Regression": LogisticRegression(max_iter=1000, random_state=25),  
+    "Random Forest": RandomForestClassifier(random_state=25),  
+    "SVM": SVC(probability=True, random_state=25),
+    "Neural Network": MLPClassifier(max_iter=1000, random_state=25),  
+    "Linear Regression": LinearRegression()  # No randomness in LinearRegression  
+}
 
 print("Baseline Model Evaluation:\n")
 for name, model in models.items():
