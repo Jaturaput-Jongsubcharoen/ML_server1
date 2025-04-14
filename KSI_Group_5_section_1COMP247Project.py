@@ -861,14 +861,14 @@ print("----------------------------------------")
 # -----------------------------------------------------------------------------
 # 4.1 Final ROC Curve
 # -----------------------------------------------------------------------------
-#plt.plot([0, 1], [0, 1], 'k--', label="Random (AUC = 0.50)")
-#plt.xlabel("False Positive Rate")
-#plt.ylabel("True Positive Rate")
-#plt.title("ROC Curve Comparison")
-#plt.legend(loc="lower right")
-#plt.grid()
-#plt.tight_layout()
-#plt.show()
+plt.plot([0, 1], [0, 1], 'k--', label="Random (AUC = 0.50)")
+plt.xlabel("False Positive Rate")
+plt.ylabel("True Positive Rate")
+plt.title("ROC Curve Comparison")
+plt.legend(loc="lower right")
+plt.grid(True)
+plt.tight_layout()
+plt.show()
 
 # -----------------------------------------------------------------------------
 # 4.2 Final Model Summary
