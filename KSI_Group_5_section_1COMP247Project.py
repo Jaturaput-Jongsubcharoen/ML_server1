@@ -473,89 +473,197 @@ print(pd.DataFrame(X_test_transformed).head())
 # -----------------------------------------------------------------------------  
 # 3. Predictive model building  
 # -----------------------------------------------------------------------------  
-from sklearn.linear_model import LogisticRegression, LinearRegression  
+from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier  
 from sklearn.neural_network import MLPClassifier  
 from sklearn.svm import SVC  
+from sklearn.neighbors import KNeighborsClassifier
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix  
 
-# Store models  
-models = {  
-    "Logistic Regression": LogisticRegression(max_iter=1000, random_state=25),  
-    "Random Forest": RandomForestClassifier(random_state=25),  
-    "SVM": SVC(probability=True, random_state=25),
-    "Neural Network": MLPClassifier(max_iter=1000, random_state=25),  
-    "Linear Regression": LinearRegression()  # No randomness in LinearRegression  
-}
+# 1. Logistic Regression
+log_model = LogisticRegression(max_iter=1000, random_state=25)
+log_model.fit(X_train_balanced, y_train_balanced)
+log_pred = log_model.predict(X_test)
 
-print("Baseline Model Evaluation:\n")
-for name, model in models.items():
-    model.fit(X_train_balanced, y_train_balanced)
-    y_pred = model.predict(X_test)  # Use unbalanced, real test set
+print("\nLogistic Regression - Accuracy:", accuracy_score(y_test, log_pred))
+print("Confusion Matrix:\n", confusion_matrix(y_test, log_pred))
+print("Classification Report:\n", classification_report(y_test, log_pred))
 
-    # Threshold Linear Regression outputs to get class labels
-    if name == "Linear Regression":
-        y_pred = (y_pred > 0.5).astype(int)
 
-    acc = accuracy_score(y_test, y_pred)
-    print("\n")
-    print(f"{name} - Accuracy: {acc:.4f}")
-    print("Confusion Matrix:")
-    print(confusion_matrix(y_test, y_pred))
-    print("Classification Report:")
-    print(classification_report(y_test, y_pred))
+# 2. Random Forest
+rf_model = RandomForestClassifier(random_state=25)
+rf_model.fit(X_train_balanced, y_train_balanced)
+rf_pred = rf_model.predict(X_test)
+
+print("\nRandom Forest - Accuracy:", accuracy_score(y_test, rf_pred))
+print("Confusion Matrix:\n", confusion_matrix(y_test, rf_pred))
+print("Classification Report:\n", classification_report(y_test, rf_pred))
+
+
+# 3. SVM
+svm_model = SVC(probability=True, random_state=25)
+svm_model.fit(X_train_balanced, y_train_balanced)
+svm_pred = svm_model.predict(X_test)
+
+print("\nSVM - Accuracy:", accuracy_score(y_test, svm_pred))
+print("Confusion Matrix:\n", confusion_matrix(y_test, svm_pred))
+print("Classification Report:\n", classification_report(y_test, svm_pred))
+
+
+# 4. Neural Network (MLP)
+nn_model = MLPClassifier(max_iter=1000, random_state=25)
+nn_model.fit(X_train_balanced, y_train_balanced)
+nn_pred = nn_model.predict(X_test)
+
+print("\nNeural Network - Accuracy:", accuracy_score(y_test, nn_pred))
+print("Confusion Matrix:\n", confusion_matrix(y_test, nn_pred))
+print("Classification Report:\n", classification_report(y_test, nn_pred))
+
+
+# 5. K-Nearest Neighbors
+knn_model = KNeighborsClassifier(n_neighbors=5)
+knn_model.fit(X_train_balanced, y_train_balanced)
+knn_pred = knn_model.predict(X_test)
+
+print("\nKNN - Accuracy:", accuracy_score(y_test, knn_pred))
+print("Confusion Matrix:\n", confusion_matrix(y_test, knn_pred))
+print("Classification Report:\n", classification_report(y_test, knn_pred))
 
 # -----------------------------------------------------------------------------
-# 4. Model scoring and evaluation
+# 4. Model scoring and evaluation (per model)
 # -----------------------------------------------------------------------------
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_curve, auc
+from sklearn.metrics import (
+    accuracy_score, precision_score, recall_score, f1_score,
+    confusion_matrix, classification_report, roc_curve, auc
+)
 import matplotlib.pyplot as plt
+import joblib
+import pandas as pd
 
-# 4.1 Present results using accuracy, precision, recall, F1 score, confusion matrix, and ROC curves
 model_scores = {}
 
-plt.figure(figsize=(8, 6))  # Setup for ROC plot
+plt.figure(figsize=(8, 6))  # ROC plot setup
 
-for name, model in models.items():
-    y_pred = model.predict(X_test)
+# 1. Logistic Regression
+log_model = LogisticRegression(max_iter=1000, random_state=25)
+log_model.fit(X_train_balanced, y_train_balanced)
+log_pred = log_model.predict(X_test)
+log_proba = log_model.predict_proba(X_test)[:, 1]
 
-    if name == "Linear Regression":
-        y_pred = (y_pred > 0.5).astype(int)
+model_scores["Logistic Regression"] = {
+    "Accuracy": accuracy_score(y_test, log_pred),
+    "Precision": precision_score(y_test, log_pred),
+    "Recall": recall_score(y_test, log_pred),
+    "F1 Score": f1_score(y_test, log_pred)
+}
 
-    # Predict probabilities or decision scores
-    if hasattr(model, "predict_proba"):
-        y_proba = model.predict_proba(X_test)[:, 1]
-    elif hasattr(model, "decision_function"):
-        y_proba = model.decision_function(X_test)
-    elif name == "Linear Regression":
-        y_proba = model.predict(X_test)
-    else:
-        y_proba = y_pred  # fallback
+print("\n----------------------------------------")
+print("Logistic Regression")
+print("Confusion Matrix:\n", confusion_matrix(y_test, log_pred))
+print("Classification Report:\n", classification_report(y_test, log_pred))
+fpr, tpr, _ = roc_curve(y_test, log_proba)
+plt.plot(fpr, tpr, label="Logistic Regression (AUC = {:.2f})".format(auc(fpr, tpr)))
+joblib.dump(log_model, "logistic_regression_model.pkl")
+print("Logistic Regression model saved as 'logistic_regression_model.pkl'")
+print("----------------------------------------")
 
-    # Calculate metrics
-    acc = accuracy_score(y_test, y_pred)
-    prec = precision_score(y_test, y_pred)
-    rec = recall_score(y_test, y_pred)
-    f1 = f1_score(y_test, y_pred)
+# 2. Random Forest
+rf_model = RandomForestClassifier(random_state=25)
+rf_model.fit(X_train_balanced, y_train_balanced)
+rf_pred = rf_model.predict(X_test)
+rf_proba = rf_model.predict_proba(X_test)[:, 1]
 
-    model_scores[name] = {"Accuracy": acc, "Precision": prec, "Recall": rec, "F1 Score": f1}
+model_scores["Random Forest"] = {
+    "Accuracy": accuracy_score(y_test, rf_pred),
+    "Precision": precision_score(y_test, rf_pred),
+    "Recall": recall_score(y_test, rf_pred),
+    "F1 Score": f1_score(y_test, rf_pred)
+}
 
-    print("\n")
-    print("----------------------------------------")
-    print(f"{name}")
-    print("Confusion Matrix:")
-    print(confusion_matrix(y_test, y_pred))
-    print("Classification Report:")
-    print(classification_report(y_test, y_pred))
-    print("----------------------------------------")
+print("\n----------------------------------------")
+print("Random Forest")
+print("Confusion Matrix:\n", confusion_matrix(y_test, rf_pred))
+print("Classification Report:\n", classification_report(y_test, rf_pred))
+fpr, tpr, _ = roc_curve(y_test, rf_proba)
+plt.plot(fpr, tpr, label="Random Forest (AUC = {:.2f})".format(auc(fpr, tpr)))
+joblib.dump(rf_model, "random_forest_model.pkl")
+print("Random Forest model saved as 'random_forest_model.pkl'")
+print("----------------------------------------")
 
-    # Plot ROC Curve
-    fpr, tpr, _ = roc_curve(y_test, y_proba)
-    roc_auc = auc(fpr, tpr)
-    plt.plot(fpr, tpr, label=f"{name} (AUC = {roc_auc:.2f})")
+# 3. SVM
+svm_model = SVC(probability=True, random_state=25)
+svm_model.fit(X_train_balanced, y_train_balanced)
+svm_pred = svm_model.predict(X_test)
+svm_proba = svm_model.predict_proba(X_test)[:, 1]
 
-# Finalize ROC plot
-plt.plot([0, 1], [0, 1], 'k--', label="Random (AUC = 0.50)")  # Baseline
+model_scores["SVM"] = {
+    "Accuracy": accuracy_score(y_test, svm_pred),
+    "Precision": precision_score(y_test, svm_pred),
+    "Recall": recall_score(y_test, svm_pred),
+    "F1 Score": f1_score(y_test, svm_pred)
+}
+
+print("\n----------------------------------------")
+print("SVM")
+print("Confusion Matrix:\n", confusion_matrix(y_test, svm_pred))
+print("Classification Report:\n", classification_report(y_test, svm_pred))
+fpr, tpr, _ = roc_curve(y_test, svm_proba)
+plt.plot(fpr, tpr, label="SVM (AUC = {:.2f})".format(auc(fpr, tpr)))
+joblib.dump(svm_model, "svm_model.pkl")
+print("SVM model saved as 'svm_model.pkl'")
+print("----------------------------------------")
+
+# 4. Neural Network
+nn_model = MLPClassifier(max_iter=1000, random_state=25)
+nn_model.fit(X_train_balanced, y_train_balanced)
+nn_pred = nn_model.predict(X_test)
+nn_proba = nn_model.predict_proba(X_test)[:, 1]
+
+model_scores["Neural Network"] = {
+    "Accuracy": accuracy_score(y_test, nn_pred),
+    "Precision": precision_score(y_test, nn_pred),
+    "Recall": recall_score(y_test, nn_pred),
+    "F1 Score": f1_score(y_test, nn_pred)
+}
+
+print("\n----------------------------------------")
+print("Neural Network")
+print("Confusion Matrix:\n", confusion_matrix(y_test, nn_pred))
+print("Classification Report:\n", classification_report(y_test, nn_pred))
+fpr, tpr, _ = roc_curve(y_test, nn_proba)
+plt.plot(fpr, tpr, label="Neural Network (AUC = {:.2f})".format(auc(fpr, tpr)))
+joblib.dump(nn_model, "neural_network_model.pkl")
+print("Neural Network model saved as 'neural_network_model.pkl'")
+print("----------------------------------------")
+
+# 5. KNN
+knn_model = KNeighborsClassifier(n_neighbors=5)
+knn_model.fit(X_train_balanced, y_train_balanced)
+knn_pred = knn_model.predict(X_test)
+# Note: KNN also supports predict_proba
+knn_proba = knn_model.predict_proba(X_test)[:, 1]
+
+model_scores["KNN"] = {
+    "Accuracy": accuracy_score(y_test, knn_pred),
+    "Precision": precision_score(y_test, knn_pred),
+    "Recall": recall_score(y_test, knn_pred),
+    "F1 Score": f1_score(y_test, knn_pred)
+}
+
+print("\n----------------------------------------")
+print("KNN")
+print("Confusion Matrix:\n", confusion_matrix(y_test, knn_pred))
+print("Classification Report:\n", classification_report(y_test, knn_pred))
+fpr, tpr, _ = roc_curve(y_test, knn_proba)
+plt.plot(fpr, tpr, label="KNN (AUC = {:.2f})".format(auc(fpr, tpr)))
+joblib.dump(knn_model, "knn_model.pkl")
+print("KNN model saved as 'knn_model.pkl'")
+print("----------------------------------------")
+
+# -----------------------------------------------------------------------------
+# 4.1 Final ROC Curve
+# -----------------------------------------------------------------------------
+plt.plot([0, 1], [0, 1], 'k--', label="Random (AUC = 0.50)")
 plt.xlabel("False Positive Rate")
 plt.ylabel("True Positive Rate")
 plt.title("ROC Curve Comparison")
@@ -563,46 +671,20 @@ plt.legend(loc="lower right")
 plt.grid()
 plt.tight_layout()
 plt.show()
-print("----------------------------------------")
-
-# -----------------------------------------------------------------------------  
-# 4.2 Select and Recommend the Best Performing Model  
-# -----------------------------------------------------------------------------  
-results_df = pd.DataFrame(model_scores).T.sort_values("F1 Score", ascending=False)  
-print("\n")  
-print("----------------------------------------")  
-print("Model Performance Summary:")  
-print(results_df)  
-print("----------------------------------------")  
-
-best_model = results_df.index[0]  
-print("\n")  
-print("----------------------------------------")  
-print(f"Recommended Model: {best_model} (Based on highest F1 Score)")  
-print("----------------------------------------")  
 
 # -----------------------------------------------------------------------------
-# 5.2 Save all trained models
+# 4.2 Final Model Summary
 # -----------------------------------------------------------------------------
-import joblib
-print("\n")
-print("----------------------------------------")
-joblib.dump(models["Random Forest"], "random_forest_model.pkl")
-print("Random Forest model saved as 'random_forest_model.pkl'")
-
-joblib.dump(models["SVM"], "svm_model.pkl")
-print("SVM model saved as 'svm_model.pkl'")
-
-joblib.dump(models["Neural Network"], "neural_network_model.pkl")
-print("Neural Network model saved as 'neural_network_model.pkl'")
-
-joblib.dump(models["Logistic Regression"], "logistic_regression_model.pkl")
-print("Logistic Regression model saved as 'logistic_regression_model.pkl'")
-
-joblib.dump(models["Linear Regression"], "linear_regression_model.pkl")
-print("Linear Regression model saved as 'linear_regression_model.pkl'")
+results_df = pd.DataFrame(model_scores).T.sort_values("F1 Score", ascending=False)
+print("\n----------------------------------------")
+print("Model Performance Summary:")
+print(results_df)
 print("----------------------------------------")
 
+best_model = results_df.index[0]
+print("\n----------------------------------------")
+print(f"Recommended Model: {best_model} (Based on highest F1 Score)")
+print("----------------------------------------")
 
 
 # print("Top 5 STREET1 values used the most:")

@@ -9,7 +9,6 @@ Created on Sun Mar 30 15:38:46 2025
 # 5. Deploying the Model
 # -----------------------------------------------------------------------------
 
-# Hello
 # 5.1 Flask API to serve the trained model
 from flask import Flask, request, jsonify
 from flask_cors import CORS
@@ -22,10 +21,10 @@ models = {
     "svm": joblib.load("svm_model.pkl"),
     "neural_network": joblib.load("neural_network_model.pkl"),
     "logistic_regression": joblib.load("logistic_regression_model.pkl"),
-    "linear_regression": joblib.load("linear_regression_model.pkl")
+    "knn": joblib.load("knn_model.pkl")
 }
 
-# Use the logistic regression model's feature names
+# Define the expected one-hot encoded feature names
 expected_features = [
     'STREET1_LAWRENCE AVE E',
     'STREET2_E OF DVP ON RAMP Aven',
@@ -65,26 +64,23 @@ def predict():
     for feature in expected_features:
         try:
             col, val = feature.split("_", 1)
-        except:
+        except ValueError:
             return jsonify({"error": f"Feature format error in: {feature}"}), 400
 
         encoded_vector.append(1 if input_data.get(col) == val else 0)
 
     if len(encoded_vector) != EXPECTED_NUM_FEATURES:
         return jsonify({
-            "error": f"Expected {EXPECTED_NUM_FEATURES} features, but got {len(encoded_vector)}"
+            "error": f"Expected {EXPECTED_NUM_FEATURES} features, but got {len(encoded_vector)}",
+            "received_input": list(input_data.keys())
         }), 400
-    
+
     try:
         import warnings
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             features_array = np.array([encoded_vector])
             prediction = models[model_name].predict(features_array)[0]
-
-        if model_name == "linear_regression":
-            prediction = int(prediction > 0.5)
-        else:
             prediction = int(prediction)
 
         return jsonify({
