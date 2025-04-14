@@ -579,7 +579,14 @@ model_scores = {}
 plt.figure(figsize=(8, 6))  # ROC plot setup
 
 # 1. Logistic Regression
-log_model = LogisticRegression(max_iter=1000, random_state=25)
+log_model = LogisticRegression(
+    penalty='l2',               # L2 regularization to prevent overfitting
+    solver='liblinear',         # Good for small-to-medium datasets, supports L1/L2
+    class_weight='balanced',   # Handles imbalance in target variable
+    max_iter=1000,
+    random_state=25
+)
+
 log_model.fit(X_train_balanced, y_train_balanced)
 log_pred = log_model.predict(X_test)
 log_proba = log_model.predict_proba(X_test)[:, 1]
@@ -605,7 +612,13 @@ print("Logistic Regression model saved as 'logistic_regression_model.pkl'")
 print("----------------------------------------")
 
 # 2. Random Forest
-rf_model = RandomForestClassifier(random_state=25)
+rf_model = RandomForestClassifier(
+    n_estimators=200,       # More trees for better ensemble averaging
+    max_depth=20,           # Controls overfitting
+    class_weight='balanced',# Handles class imbalance (e.g., Fatal vs. Non-Fatal)
+    random_state=25
+)
+
 rf_model.fit(X_train_balanced, y_train_balanced)
 rf_pred = rf_model.predict(X_test)
 rf_proba = rf_model.predict_proba(X_test)[:, 1]
@@ -631,7 +644,13 @@ print("Random Forest model saved as 'random_forest_model.pkl'")
 print("----------------------------------------")
 
 # 3. SVM
-svm_model = SVC(probability=True, random_state=25)
+svm_model = SVC(
+    kernel='rbf',               # RBF = non-linear kernel (default)
+    gamma='scale',              # Kernel coefficient (auto-tuned to data)
+    class_weight='balanced',    # Handles imbalance between Fatal vs Non-Fatal
+    probability=True,           # Enables predict_proba for ROC
+    random_state=25             # Ensures reproducibility
+)
 svm_model.fit(X_train_balanced, y_train_balanced)
 svm_pred = svm_model.predict(X_test)
 svm_proba = svm_model.predict_proba(X_test)[:, 1]
@@ -658,7 +677,13 @@ print("SVM model saved as 'svm_model.pkl'")
 print("----------------------------------------")
 
 # 4. Neural Network
-nn_model = MLPClassifier(max_iter=1000, random_state=25)
+nn_model = MLPClassifier(
+    hidden_layer_sizes=(100, 50),  # Two layers: 100 neurons to 50 neurons
+    alpha=0.0005,                  # Adds more L2 regularization to reduce overfitting from 0.0001
+    learning_rate='adaptive',      # Adjusts learning rate dynamically during training
+    max_iter=1000,                 # Allows enough time to converge on large data
+    random_state=25
+)
 nn_model.fit(X_train_balanced, y_train_balanced)
 nn_pred = nn_model.predict(X_test)
 nn_proba = nn_model.predict_proba(X_test)[:, 1]
@@ -684,7 +709,11 @@ print("Neural Network model saved as 'neural_network_model.pkl'")
 print("----------------------------------------")
 
 # 5. KNN
-knn_model = KNeighborsClassifier(n_neighbors=5)
+knn_model = KNeighborsClassifier(
+    n_neighbors=7,        # Try different neighbor counts / Number of neighbors to vote. More neighbors = smoother boundary.
+    weights='distance',   # Weight closer neighbors more / Closer neighbors have more influence (helps accuracy).
+    p=2                   # L2 norm (Euclidean). If p=1, it uses Manhattan distance.
+)
 knn_model.fit(X_train_balanced, y_train_balanced)
 knn_pred = knn_model.predict(X_test)
 # Note: KNN also supports predict_proba
@@ -713,14 +742,14 @@ print("----------------------------------------")
 # -----------------------------------------------------------------------------
 # 4.1 Final ROC Curve
 # -----------------------------------------------------------------------------
-plt.plot([0, 1], [0, 1], 'k--', label="Random (AUC = 0.50)")
-plt.xlabel("False Positive Rate")
-plt.ylabel("True Positive Rate")
-plt.title("ROC Curve Comparison")
-plt.legend(loc="lower right")
-plt.grid()
-plt.tight_layout()
-plt.show()
+#plt.plot([0, 1], [0, 1], 'k--', label="Random (AUC = 0.50)")
+#plt.xlabel("False Positive Rate")
+#plt.ylabel("True Positive Rate")
+#plt.title("ROC Curve Comparison")
+#plt.legend(loc="lower right")
+#plt.grid()
+#plt.tight_layout()
+#plt.show()
 
 # -----------------------------------------------------------------------------
 # 4.2 Final Model Summary
