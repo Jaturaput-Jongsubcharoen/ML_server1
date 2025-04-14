@@ -329,7 +329,7 @@ final_feature_names = numerical_cols + selected_cat_features.tolist()
 
 # Step 11: Split data
 X_train, X_test, y_train, y_test = train_test_split(
-    X_selected, y, test_size=0.2, stratify=y, random_state=42
+    X_selected, y, test_size=0.2, stratify=y, random_state=25
 )
 
 # Step 12: Convert to DataFrame
@@ -338,7 +338,7 @@ X_test = pd.DataFrame(X_test, columns=final_feature_names)
 
 # Step 13: Apply SMOTE
 print("\nClass distribution before SMOTE:", Counter(y_train))
-smote = SMOTE(random_state=42)
+smote = SMOTE(random_state=25)
 X_train_balanced, y_train_balanced = smote.fit_resample(X_train, y_train)
 print("Class distribution after SMOTE:", Counter(y_train_balanced))
 
@@ -434,7 +434,7 @@ print(full_feature_scores.head(10))
 from sklearn.model_selection import train_test_split
 
 # Splitting data into 80% training and 20% testing
-X_train, X_test, y_train, y_test = train_test_split(X_selected, y, test_size=0.2, random_state=42, stratify=y)
+X_train, X_test, y_train, y_test = train_test_split(X_selected, y, test_size=0.2, random_state=25, stratify=y)
 
 print(f"Data Split: Training Set = {X_train.shape[0]} rows, Testing Set = {X_test.shape[0]} rows.")
 
@@ -456,7 +456,7 @@ feature_names = X_train.columns
 print("\nClass distribution in training data before balancing:", Counter(y_train))
 
 # Apply SMOTE for oversampling (Training Data)
-smote = SMOTE(random_state=42)
+smote = SMOTE(random_state=25)
 X_train_balanced, y_train_balanced = smote.fit_resample(X_train, y_train)
 
 # Convert X_train_balanced back to DataFrame with original column names
@@ -579,109 +579,205 @@ model_scores = {}
 plt.figure(figsize=(8, 6))  # ROC plot setup
 
 # 1. Logistic Regression
-log_model = LogisticRegression(
-    penalty='l2',               # L2 regularization to prevent overfitting
-    solver='liblinear',         # Good for small-to-medium datasets, supports L1/L2
-    class_weight='balanced',   # Handles imbalance in target variable
+# -------------------------------------------------------------
+# LOGISTIC REGRESSION - BEFORE TUNING (Baseline)
+# -------------------------------------------------------------
+baseline_log_model = LogisticRegression(random_state=25)  # Default settings
+baseline_log_model.fit(X_train_balanced, y_train_balanced)
+baseline_log_pred = baseline_log_model.predict(X_test)
+baseline_log_proba = baseline_log_model.predict_proba(X_test)[:, 1]
+
+print("\n---------- Logistic Regression (Before Tuning) ----------")
+print("Confusion Matrix:\n", confusion_matrix(y_test, baseline_log_pred))
+print("Classification Report:\n", classification_report(y_test, baseline_log_pred))
+fpr, tpr, _ = roc_curve(y_test, baseline_log_proba)
+plt.plot(fpr, tpr, label="LogReg (Before) AUC = {:.2f}".format(auc(fpr, tpr)))
+
+# Save baseline model
+joblib.dump({
+    "model": baseline_log_model,
+    "features": final_feature_names
+}, "logistic_regression_baseline.pkl")
+print("Saved as 'logistic_regression_baseline.pkl'")
+
+# -------------------------------------------------------------
+# LOGISTIC REGRESSION - AFTER TUNING
+# -------------------------------------------------------------
+tuned_log_model = LogisticRegression(
+    penalty='l2',               # L2 regularization
+    solver='liblinear',         # More stable on small/mid datasets
+    class_weight='balanced',    # Handle imbalanced classes
     max_iter=1000,
     random_state=25
 )
-
-log_model.fit(X_train_balanced, y_train_balanced)
-log_pred = log_model.predict(X_test)
-log_proba = log_model.predict_proba(X_test)[:, 1]
+tuned_log_model.fit(X_train_balanced, y_train_balanced)
+tuned_log_pred = tuned_log_model.predict(X_test)
+tuned_log_proba = tuned_log_model.predict_proba(X_test)[:, 1]
 
 model_scores["Logistic Regression"] = {
-    "Accuracy": accuracy_score(y_test, log_pred),
-    "Precision": precision_score(y_test, log_pred),
-    "Recall": recall_score(y_test, log_pred),
-    "F1 Score": f1_score(y_test, log_pred)
+    "Accuracy": accuracy_score(y_test, tuned_log_pred),
+    "Precision": precision_score(y_test, tuned_log_pred),
+    "Recall": recall_score(y_test, tuned_log_pred),
+    "F1 Score": f1_score(y_test, tuned_log_pred)
 }
 
-print("\n----------------------------------------")
-print("Logistic Regression")
-print("Confusion Matrix:\n", confusion_matrix(y_test, log_pred))
-print("Classification Report:\n", classification_report(y_test, log_pred))
-fpr, tpr, _ = roc_curve(y_test, log_proba)
-plt.plot(fpr, tpr, label="Logistic Regression (AUC = {:.2f})".format(auc(fpr, tpr)))
+print("\n---------- Logistic Regression (After Tuning) ----------")
+print("Confusion Matrix:\n", confusion_matrix(y_test, tuned_log_pred))
+print("Classification Report:\n", classification_report(y_test, tuned_log_pred))
+fpr, tpr, _ = roc_curve(y_test, tuned_log_proba)
+plt.plot(fpr, tpr, label="LogReg (Tuned) AUC = {:.2f}".format(auc(fpr, tpr)))
+
+# Save tuned model
 joblib.dump({
-    "model": log_model,
+    "model": tuned_log_model,
     "features": final_feature_names
 }, "logistic_regression_model.pkl")
 print("Logistic Regression model saved as 'logistic_regression_model.pkl'")
-print("----------------------------------------")
 
 # 2. Random Forest
-rf_model = RandomForestClassifier(
-    n_estimators=200,       # More trees for better ensemble averaging
-    max_depth=20,           # Controls overfitting
-    class_weight='balanced',# Handles class imbalance (e.g., Fatal vs. Non-Fatal)
+# -------------------------------------------------------------
+# RANDOM FOREST - BEFORE TUNING (Baseline)
+# -------------------------------------------------------------
+baseline_rf_model = RandomForestClassifier(random_state=25)  # Default hyperparameters
+baseline_rf_model.fit(X_train_balanced, y_train_balanced)
+baseline_rf_pred = baseline_rf_model.predict(X_test)
+baseline_rf_proba = baseline_rf_model.predict_proba(X_test)[:, 1]
+
+print("\n---------- Random Forest (Before Tuning) ----------")
+print("Confusion Matrix:\n", confusion_matrix(y_test, baseline_rf_pred))
+print("Classification Report:\n", classification_report(y_test, baseline_rf_pred))
+fpr, tpr, _ = roc_curve(y_test, baseline_rf_proba)
+plt.plot(fpr, tpr, label="RF (Before) AUC = {:.2f}".format(auc(fpr, tpr)))
+
+# Save baseline model
+joblib.dump({
+    "model": baseline_rf_model,
+    "features": final_feature_names
+}, "random_forest_baseline.pkl")
+print("Saved as 'random_forest_baseline.pkl'")
+print("----------------------------------------")
+
+# -------------------------------------------------------------
+# RANDOM FOREST - AFTER TUNING (Improved Hyperparameters)
+# -------------------------------------------------------------
+tuned_rf_model = RandomForestClassifier(
+    n_estimators=300,        # Increased number of trees
+    max_depth=25,            # Limit tree depth to prevent overfitting
+    class_weight='balanced', # Address class imbalance
     random_state=25
 )
-
-rf_model.fit(X_train_balanced, y_train_balanced)
-rf_pred = rf_model.predict(X_test)
-rf_proba = rf_model.predict_proba(X_test)[:, 1]
+tuned_rf_model.fit(X_train_balanced, y_train_balanced)
+tuned_rf_pred = tuned_rf_model.predict(X_test)
+tuned_rf_proba = tuned_rf_model.predict_proba(X_test)[:, 1]
 
 model_scores["Random Forest"] = {
-    "Accuracy": accuracy_score(y_test, rf_pred),
-    "Precision": precision_score(y_test, rf_pred),
-    "Recall": recall_score(y_test, rf_pred),
-    "F1 Score": f1_score(y_test, rf_pred)
+    "Accuracy": accuracy_score(y_test, tuned_rf_pred),
+    "Precision": precision_score(y_test, tuned_rf_pred),
+    "Recall": recall_score(y_test, tuned_rf_pred),
+    "F1 Score": f1_score(y_test, tuned_rf_pred)
 }
 
-print("\n----------------------------------------")
-print("Random Forest")
-print("Confusion Matrix:\n", confusion_matrix(y_test, rf_pred))
-print("Classification Report:\n", classification_report(y_test, rf_pred))
-fpr, tpr, _ = roc_curve(y_test, rf_proba)
-plt.plot(fpr, tpr, label="Random Forest (AUC = {:.2f})".format(auc(fpr, tpr)))
+print("\n---------- Random Forest (After Tuning) ----------")
+print("Confusion Matrix:\n", confusion_matrix(y_test, tuned_rf_pred))
+print("Classification Report:\n", classification_report(y_test, tuned_rf_pred))
+fpr, tpr, _ = roc_curve(y_test, tuned_rf_proba)
+plt.plot(fpr, tpr, label="RF (Tuned) AUC = {:.2f}".format(auc(fpr, tpr)))
+
+# Save tuned model
 joblib.dump({
-    "model": rf_model,
+    "model": tuned_rf_model,
     "features": final_feature_names
 }, "random_forest_model.pkl")
 print("Random Forest model saved as 'random_forest_model.pkl'")
 print("----------------------------------------")
 
 # 3. SVM
-svm_model = SVC(
-    kernel='rbf',               # RBF = non-linear kernel (default)
-    gamma='scale',              # Kernel coefficient (auto-tuned to data)
-    class_weight='balanced',    # Handles imbalance between Fatal vs Non-Fatal
-    probability=True,           # Enables predict_proba for ROC
-    random_state=25             # Ensures reproducibility
+# -------------------------------------------------------------
+# SVM - BEFORE TUNING (Baseline)
+# -------------------------------------------------------------
+baseline_svm_model = SVC(probability=True, random_state=25)
+baseline_svm_model.fit(X_train_balanced, y_train_balanced)
+baseline_svm_pred = baseline_svm_model.predict(X_test)
+baseline_svm_proba = baseline_svm_model.predict_proba(X_test)[:, 1]
+
+print("\n---------- SVM (Before Tuning) ----------")
+print("Confusion Matrix:\n", confusion_matrix(y_test, baseline_svm_pred))
+print("Classification Report:\n", classification_report(y_test, baseline_svm_pred))
+fpr, tpr, _ = roc_curve(y_test, baseline_svm_proba)
+plt.plot(fpr, tpr, label="SVM (Before) AUC = {:.2f}".format(auc(fpr, tpr)))
+
+joblib.dump({
+    "model": baseline_svm_model,
+    "features": final_feature_names
+}, "svm_baseline.pkl")
+print("Saved as 'svm_baseline.pkl'")
+
+# -------------------------------------------------------------
+# SVM - AFTER TUNING
+# -------------------------------------------------------------
+tuned_svm_model = SVC(
+    kernel='rbf',               # RBF = non-linear kernel
+    gamma='scale',              # Uses 1 / (n_features * X.var()) as gamma
+    class_weight='balanced',    # Fix imbalance in classes
+    probability=True,           # Enables ROC + predict_proba
+    C=1.0,                      # Soft margin cost (optional)
+    random_state=25
 )
-svm_model.fit(X_train_balanced, y_train_balanced)
-svm_pred = svm_model.predict(X_test)
-svm_proba = svm_model.predict_proba(X_test)[:, 1]
+
+tuned_svm_model.fit(X_train_balanced, y_train_balanced)
+tuned_svm_pred = tuned_svm_model.predict(X_test)
+tuned_svm_proba = tuned_svm_model.predict_proba(X_test)[:, 1]
 
 model_scores["SVM"] = {
-    "Accuracy": accuracy_score(y_test, svm_pred),
-    "Precision": precision_score(y_test, svm_pred),
-    "Recall": recall_score(y_test, svm_pred),
-    "F1 Score": f1_score(y_test, svm_pred)
+    "Accuracy": accuracy_score(y_test, tuned_svm_pred),
+    "Precision": precision_score(y_test, tuned_svm_pred),
+    "Recall": recall_score(y_test, tuned_svm_pred),
+    "F1 Score": f1_score(y_test, tuned_svm_pred)
 }
 
-print("\n----------------------------------------")
-print("SVM")
-print("Confusion Matrix:\n", confusion_matrix(y_test, svm_pred))
-print("Classification Report:\n", classification_report(y_test, svm_pred))
-fpr, tpr, _ = roc_curve(y_test, svm_proba)
-plt.plot(fpr, tpr, label="SVM (AUC = {:.2f})".format(auc(fpr, tpr)))
+print("\n---------- SVM (After Tuning) ----------")
+print("Confusion Matrix:\n", confusion_matrix(y_test, tuned_svm_pred))
+print("Classification Report:\n", classification_report(y_test, tuned_svm_pred))
+fpr, tpr, _ = roc_curve(y_test, tuned_svm_proba)
+plt.plot(fpr, tpr, label="SVM (Tuned) AUC = {:.2f}".format(auc(fpr, tpr)))
+
 joblib.dump({
-    "model": svm_model,
+    "model": tuned_svm_model,
     "features": final_feature_names
 }, "svm_model.pkl")
-
 print("SVM model saved as 'svm_model.pkl'")
 print("----------------------------------------")
 
 # 4. Neural Network
+# -----------------------------------------------------------------------------
+# Neural Network - BEFORE TUNING (baseline)
+# -----------------------------------------------------------------------------
+baseline_nn_model = MLPClassifier(max_iter=1000, random_state=25)
+baseline_nn_model.fit(X_train_balanced, y_train_balanced)
+baseline_nn_pred = baseline_nn_model.predict(X_test)
+baseline_nn_proba = baseline_nn_model.predict_proba(X_test)[:, 1]
+
+print("\n---------- Neural Network (Before Tuning) ----------")
+print("Confusion Matrix:\n", confusion_matrix(y_test, baseline_nn_pred))
+print("Classification Report:\n", classification_report(y_test, baseline_nn_pred))
+fpr, tpr, _ = roc_curve(y_test, baseline_nn_proba)
+plt.plot(fpr, tpr, label="Neural Net (Before) AUC = {:.2f}".format(auc(fpr, tpr)))
+
+joblib.dump({
+    "model": baseline_nn_model,
+    "features": final_feature_names
+}, "neural_network_baseline.pkl")
+print("Saved as 'neural_network_baseline.pkl'")
+
+
+# -----------------------------------------------------------------------------
+# Neural Network - AFTER TUNING
+# -----------------------------------------------------------------------------
 nn_model = MLPClassifier(
-    hidden_layer_sizes=(100, 50),  # Two layers: 100 neurons to 50 neurons
+    hidden_layer_sizes=(100, 50),  # Two hidden layers: 100 to 50 neurons
     alpha=0.0005,                  # Adds more L2 regularization to reduce overfitting from 0.0001
-    learning_rate='adaptive',      # Adjusts learning rate dynamically during training
-    max_iter=1000,                 # Allows enough time to converge on large data
+    learning_rate='adaptive',      # Adjusts learning rate based on training performance
+    max_iter=1000,                 # Maximum epochs to converge
     random_state=25
 )
 nn_model.fit(X_train_balanced, y_train_balanced)
@@ -695,12 +791,12 @@ model_scores["Neural Network"] = {
     "F1 Score": f1_score(y_test, nn_pred)
 }
 
-print("\n----------------------------------------")
-print("Neural Network")
+print("\n---------- Neural Network (After Tuning) ----------")
 print("Confusion Matrix:\n", confusion_matrix(y_test, nn_pred))
 print("Classification Report:\n", classification_report(y_test, nn_pred))
 fpr, tpr, _ = roc_curve(y_test, nn_proba)
-plt.plot(fpr, tpr, label="Neural Network (AUC = {:.2f})".format(auc(fpr, tpr)))
+plt.plot(fpr, tpr, label="Neural Net (Tuned) AUC = {:.2f}".format(auc(fpr, tpr)))
+
 joblib.dump({
     "model": nn_model,
     "features": final_feature_names
@@ -709,6 +805,30 @@ print("Neural Network model saved as 'neural_network_model.pkl'")
 print("----------------------------------------")
 
 # 5. KNN
+# -----------------------------------------------------------------------------
+# KNN - BEFORE TUNING (baseline)
+# -----------------------------------------------------------------------------
+baseline_knn = KNeighborsClassifier(n_neighbors=5)
+baseline_knn.fit(X_train_balanced, y_train_balanced)
+baseline_knn_pred = baseline_knn.predict(X_test)
+baseline_knn_proba = baseline_knn.predict_proba(X_test)[:, 1]
+
+print("\n---------- KNN (Before Tuning) ----------")
+print("Confusion Matrix:\n", confusion_matrix(y_test, baseline_knn_pred))
+print("Classification Report:\n", classification_report(y_test, baseline_knn_pred))
+fpr, tpr, _ = roc_curve(y_test, baseline_knn_proba)
+plt.plot(fpr, tpr, label="KNN (Before) AUC = {:.2f}".format(auc(fpr, tpr)))
+
+joblib.dump({
+    "model": baseline_knn,
+    "features": final_feature_names
+}, "knn_baseline_model.pkl")
+print("Saved as 'knn_baseline_model.pkl'")
+
+
+# -----------------------------------------------------------------------------
+# KNN - AFTER TUNING
+# -----------------------------------------------------------------------------
 knn_model = KNeighborsClassifier(
     n_neighbors=7,        # Try different neighbor counts / Number of neighbors to vote. More neighbors = smoother boundary.
     weights='distance',   # Weight closer neighbors more / Closer neighbors have more influence (helps accuracy).
@@ -716,7 +836,6 @@ knn_model = KNeighborsClassifier(
 )
 knn_model.fit(X_train_balanced, y_train_balanced)
 knn_pred = knn_model.predict(X_test)
-# Note: KNN also supports predict_proba
 knn_proba = knn_model.predict_proba(X_test)[:, 1]
 
 model_scores["KNN"] = {
@@ -726,12 +845,12 @@ model_scores["KNN"] = {
     "F1 Score": f1_score(y_test, knn_pred)
 }
 
-print("\n----------------------------------------")
-print("KNN")
+print("\n---------- KNN (After Tuning) ----------")
 print("Confusion Matrix:\n", confusion_matrix(y_test, knn_pred))
 print("Classification Report:\n", classification_report(y_test, knn_pred))
 fpr, tpr, _ = roc_curve(y_test, knn_proba)
-plt.plot(fpr, tpr, label="KNN (AUC = {:.2f})".format(auc(fpr, tpr)))
+plt.plot(fpr, tpr, label="KNN (Tuned) AUC = {:.2f}".format(auc(fpr, tpr)))
+
 joblib.dump({
     "model": knn_model,
     "features": final_feature_names
