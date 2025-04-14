@@ -264,35 +264,93 @@ plt.show()
 
 # 2.1. Data transformations – Handling missing data, categorical data, normalization, standardization
 from sklearn.impute import SimpleImputer
-from sklearn.preprocessing import StandardScaler, MinMaxScaler, OneHotEncoder
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
+from sklearn.feature_selection import SelectKBest, f_classif
+from sklearn.model_selection import train_test_split
+from imblearn.over_sampling import SMOTE
+from collections import Counter
+import pandas as pd
+import numpy as np
 
-# Identify categorical and numerical columns
-categorical_cols = Group_data.select_dtypes(include=['object']).columns
-numerical_cols = Group_data.select_dtypes(include=['int64', 'float64']).columns
+# Step 1: Define Target
+y = Group_data["ACCLASS"].apply(lambda x: 1 if x == "Fatal" else 0)
 
-# Handling missing numerical data (imputation)
-num_imputer = SimpleImputer(strategy="median")
+# Step 2: Identify columns
+categorical_cols = Group_data.select_dtypes(include=['object']).columns.tolist()
+numerical_cols = Group_data.select_dtypes(include=['int64', 'float64']).columns.tolist()
 
-# Handling categorical data (encoding)
-cat_imputer = SimpleImputer(strategy="most_frequent")  # Fill missing categorical values
-one_hot_encoder = OneHotEncoder(handle_unknown="ignore")
+# Remove target from categorical columns
+if "ACCLASS" in categorical_cols:
+    categorical_cols.remove("ACCLASS")
 
-# Normalization (MinMax Scaling) & Standardization (Standard Scaler)
-scaler = StandardScaler()  # Change to MinMaxScaler() if needed
+# Step 3: Separate inputs (X)
+X = Group_data[categorical_cols + numerical_cols]
 
-# Column Transformer: Applies transformations to different column types
-preprocessor = ColumnTransformer([
-    ("num", Pipeline([("imputer", num_imputer), ("scaler", scaler)]), numerical_cols),
-    ("cat", Pipeline([("imputer", cat_imputer), ("encoder", one_hot_encoder)]), categorical_cols)
+# Step 4: Define pipelines
+# Numerical
+numerical_pipeline = Pipeline(steps=[
+    ("imputer", SimpleImputer(strategy="median")),
+    ("scaler", StandardScaler())
 ])
 
+# Categorical
+categorical_pipeline = Pipeline(steps=[
+    ("imputer", SimpleImputer(strategy="most_frequent")),
+    ("encoder", OneHotEncoder(handle_unknown="ignore", sparse_output=False))
+])
+
+# Step 5: Create preprocessor
+preprocessor = ColumnTransformer(transformers=[
+    ("num", numerical_pipeline, numerical_cols),
+    ("cat", categorical_pipeline, categorical_cols)
+])
+
+# Step 6: Transform the data
+X_preprocessed = preprocessor.fit_transform(X)
+
+# Step 7: Get feature names
+cat_features = preprocessor.named_transformers_["cat"]["encoder"].get_feature_names_out(categorical_cols)
+feature_names_combined = np.concatenate([numerical_cols, cat_features])
+
+# Step 8: Split preprocessed data into X_num and X_cat
+X_num = X_preprocessed[:, :len(numerical_cols)]
+X_cat = X_preprocessed[:, len(numerical_cols):]
+
+# Step 9: Select top 10 categorical features only
+selector = SelectKBest(score_func=f_classif, k=10)
+X_cat_selected = selector.fit_transform(X_cat, y)
+selected_cat_features = cat_features[selector.get_support()]
+
+# Step 10: Combine numerical and selected categorical features
+X_selected = np.concatenate([X_num, X_cat_selected], axis=1)
+final_feature_names = numerical_cols + selected_cat_features.tolist()
+
+# Step 11: Split data
+X_train, X_test, y_train, y_test = train_test_split(
+    X_selected, y, test_size=0.2, stratify=y, random_state=42
+)
+
+# Step 12: Convert to DataFrame
+X_train = pd.DataFrame(X_train, columns=final_feature_names)
+X_test = pd.DataFrame(X_test, columns=final_feature_names)
+
+# Step 13: Apply SMOTE
+print("\nClass distribution before SMOTE:", Counter(y_train))
+smote = SMOTE(random_state=42)
+X_train_balanced, y_train_balanced = smote.fit_resample(X_train, y_train)
+print("Class distribution after SMOTE:", Counter(y_train_balanced))
+
+# Debugging info
+print("\nColumns in X_train_balanced after SMOTE:", X_train_balanced.columns.tolist())
+print("Columns in X_test:", X_test.columns.tolist())
+
 # -----------------------------------------------------------------------------
 # -----------------------------------------------------------------------------
-# 2.2. Feature selection – (Choosing relevant CATEGORICAL features only)
+# 2.2. Feature selection – (Choosing relevant NUMERICAL and CATEGORICAL features)
 from sklearn.impute import SimpleImputer
-from sklearn.preprocessing import OneHotEncoder
+from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from sklearn.feature_selection import SelectKBest, f_classif
 from sklearn.pipeline import Pipeline
 from sklearn.compose import ColumnTransformer
@@ -302,57 +360,68 @@ import numpy as np
 # Step 1: Define the target variable
 y = Group_data["ACCLASS"].apply(lambda x: 1 if x == "Fatal" else 0)
 
-# Step 2: Get categorical columns only
+# Step 2: Identify categorical and numerical columns
 categorical_cols = Group_data.select_dtypes(include=['object']).columns.tolist()
+numerical_cols = Group_data.select_dtypes(include=['int64', 'float64']).columns.tolist()
 
-# Step 3: Drop 'ACCLASS' from input features to prevent data leakage
-X = Group_data[categorical_cols].drop(columns=["ACCLASS"], errors="ignore")
+# Step 3: Remove target from X
+if "ACCLASS" in categorical_cols:
+    categorical_cols.remove("ACCLASS")
+X = Group_data[categorical_cols + numerical_cols]
 
-# Step 4: Recalculate categorical column list (used by encoder)
-categorical_cols = X.columns.tolist()
-
-# Step 5: Create preprocessing pipeline for categorical data
+# Step 4: Create pipelines
 categorical_pipeline = Pipeline(steps=[
     ("imputer", SimpleImputer(strategy="most_frequent")),
-    ("encoder", OneHotEncoder(handle_unknown="ignore", sparse_output=False))  # use sparse_output for sklearn >=1.2
+    ("encoder", OneHotEncoder(handle_unknown="ignore", sparse_output=False))  # sparse_output for sklearn >= 1.2
+])
+numerical_pipeline = Pipeline(steps=[
+    ("imputer", SimpleImputer(strategy="median")),
+    ("scaler", StandardScaler())
 ])
 
+# Step 5: Create full preprocessing pipeline
 preprocessor = ColumnTransformer(transformers=[
-    ("cat", categorical_pipeline, categorical_cols)
+    ("cat", categorical_pipeline, categorical_cols),
+    ("num", numerical_pipeline, numerical_cols)
 ])
 
-# Step 6: Apply the pipeline to X (not full Group_data)
+# Step 6: Fit + transform X
 X_preprocessed = preprocessor.fit_transform(X)
 
-# Step 7: Apply SelectKBest to get top k categorical features
-selector = SelectKBest(score_func=f_classif, k=min(10, X_preprocessed.shape[1]))
-X_selected = selector.fit_transform(X_preprocessed, y)
+# Step 7: Get all transformed feature names
+encoded_cat_features = preprocessor.named_transformers_['cat']['encoder'].get_feature_names_out(categorical_cols)
+all_feature_names = np.concatenate([encoded_cat_features, numerical_cols])
 
-# Step 8: Get encoded feature names from the encoder
-encoded_feature_names = preprocessor.named_transformers_['cat']['encoder'].get_feature_names_out(categorical_cols)
+# Step 8: Select only categorical features for SelectKBest
+X_cat_transformed = X_preprocessed[:, :len(encoded_cat_features)]
+X_num_transformed = X_preprocessed[:, len(encoded_cat_features):]
 
-# Step 9: Map selected feature names to scores
-selected_columns = encoded_feature_names[selector.get_support()].tolist()
+# Step 9: Select top 10 categorical features only
+selector = SelectKBest(score_func=f_classif, k=min(10, X_cat_transformed.shape[1]))
+X_cat_selected = selector.fit_transform(X_cat_transformed, y)
+
+# Step 10: Final selected features = top 10 categorical + all numerical
+selected_cat_features = encoded_cat_features[selector.get_support()]
+final_feature_names = list(selected_cat_features) + numerical_cols
+X_selected = np.concatenate([X_cat_selected, X_num_transformed], axis=1)
+
+# Step 11: Print feature selection results
+print("\nSelected Top K Categorical Features Used for Training:")
+for col in selected_cat_features:
+    print("-", col)
+
 selected_scores = selector.scores_[selector.get_support()]
 selected_feature_df = pd.DataFrame({
-    "Feature": selected_columns,
+    "Feature": selected_cat_features,
     "F-Score": selected_scores
 }).sort_values(by="F-Score", ascending=False)
-
-# Save for later use (SMOTE, modeling, etc.)
-selected_feature_names = selected_columns
-
-# Step 10: Print results
-print("\nSelected Top K Categorical Features Used for Training:")
-for col in selected_columns:
-    print("-", col)
 
 print("\nF-Scores of Selected Categorical Features:")
 print(selected_feature_df)
 
 # Optional: Print the least useful features (full list sorted ascending)
 full_feature_scores = pd.DataFrame({
-    "Feature": encoded_feature_names,
+    "Feature": encoded_cat_features,
     "F-Score": selector.scores_
 }).sort_values(by="F-Score", ascending=True)
 
@@ -378,7 +447,7 @@ from collections import Counter
 # Convert X_train back to a DataFrame if it's a NumPy array (before SMOTE)
 if isinstance(X_train, np.ndarray):  
     print("Warning: X_train is a NumPy array. Converting back to DataFrame...")
-    X_train = pd.DataFrame(X_train, columns=selected_columns)  # Restore original feature names
+    X_train = pd.DataFrame(X_train, columns=final_feature_names)
 
 # Save feature names before SMOTE
 feature_names = X_train.columns
@@ -396,49 +465,57 @@ X_train_balanced = pd.DataFrame(X_train_balanced, columns=feature_names)
 # Check class distribution after balancing (Training Data)
 print("\nClass distribution in training data after SMOTE balancing:", Counter(y_train_balanced))
 
-# Apply SMOTE to Testing Data 
+# Apply SMOTE to Testing Data (not recommended)
 print("\nWARNING: Applying SMOTE to testing data may distort evaluation metrics.")
 print("This is not a standard practice and may lead to biased results.")
 
 # Convert X_test to DataFrame if needed
 if isinstance(X_test, np.ndarray):
-    X_test = pd.DataFrame(X_test, columns=feature_names)
+    X_test = pd.DataFrame(X_test, columns=final_feature_names)
 
 # Check class distribution in real test set
 print("\nClass distribution in testing data (no SMOTE applied):", Counter(y_test))
 
 # Verify columns before transforming
-print("\nColumns in X_train_balanced after SMOTE and feature selection:", X_train_balanced.columns)
-print("\nColumns in X_test after feature selection (real test set):", X_test.columns)
+print("\nColumns in X_train_balanced after SMOTE and feature selection:", X_train_balanced.columns.tolist())
+print("Columns in X_test after feature selection (real test set):", X_test.columns.tolist())
 # -----------------------------------------------------------------------------
 
-"""
 # 2.5. Using Pipelines to streamline preprocessing
 from sklearn.pipeline import Pipeline
 from sklearn.compose import ColumnTransformer
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
 from sklearn.impute import SimpleImputer
+import pandas as pd
+import numpy as np
 
-# Get the correct column names (ensure these are defined beforehand)
-selected_feature_names = X_train_balanced.columns  # Get the correct column names
+# Ensure input is in DataFrame format
+if isinstance(X_train_balanced, np.ndarray):
+    X_train_balanced = pd.DataFrame(X_train_balanced, columns=feature_names)
 
-# Separate numerical and categorical columns
+if isinstance(X_test, np.ndarray):
+    X_test = pd.DataFrame(X_test, columns=feature_names)
+
+# Separate numerical and categorical columns from balanced training data
 numerical_cols = X_train_balanced.select_dtypes(include=["number"]).columns.tolist()
 categorical_cols = X_train_balanced.select_dtypes(include=["object"]).columns.tolist()
 
-# Define preprocessing steps for numerical features
+print("\nNumerical Columns for Pipeline:", numerical_cols)
+print("Categorical Columns for Pipeline:", categorical_cols)
+
+# Preprocessing pipeline for numerical features
 numerical_preprocessor = Pipeline(steps=[
-    ("imputer", SimpleImputer(strategy="mean")),  # Handle missing values by replacing them with the mean
-    ("scaler", StandardScaler())  # Apply scaling to numerical features
+    ("imputer", SimpleImputer(strategy="mean")),
+    ("scaler", StandardScaler())
 ])
 
-# Define preprocessing steps for categorical features
+# Preprocessing pipeline for categorical features
 categorical_preprocessor = Pipeline(steps=[
-    ("imputer", SimpleImputer(strategy="most_frequent")),  # Handle missing categorical values
-    ("onehot", OneHotEncoder(handle_unknown="ignore"))  # One-hot encode categorical features
+    ("imputer", SimpleImputer(strategy="most_frequent")),
+    ("onehot", OneHotEncoder(handle_unknown="ignore", sparse_output=False))
 ])
 
-# Combine the numerical and categorical preprocessing steps
+# Combine using ColumnTransformer
 preprocessor = ColumnTransformer(
     transformers=[
         ("num", numerical_preprocessor, numerical_cols),
@@ -446,92 +523,49 @@ preprocessor = ColumnTransformer(
     ]
 )
 
-# Create the full pipeline with preprocessing for both numerical and categorical features
+# Full preprocessing pipeline
 pipeline = Pipeline([
     ("preprocessing", preprocessor)
 ])
 
-# Fit-transform the training data
+# Fit and transform training data
 X_train_transformed = pipeline.fit_transform(X_train_balanced)
 
-# Transform the test data
+# Transform test data
 X_test_transformed = pipeline.transform(X_test)
 
-# Print the shapes of the transformed data
+# Output results
 print("\nPreprocessing pipeline applied successfully.")
-
-print("\nShape of Transformed Training Data:", X_train_transformed.shape)
+print("Shape of Transformed Training Data:", X_train_transformed.shape)
 print("Shape of Transformed Test Data:", X_test_transformed.shape)
 
-# Display first 5 rows (note: values are scaled and encoded, so they may look different)
 print("\nPreview of Transformed Training Data:")
 print(pd.DataFrame(X_train_transformed).head())
+
 print("\nPreview of Transformed Test Data:")
 print(pd.DataFrame(X_test_transformed).head())
-"""
 
-# -----------------------------------------------------------------------------  
-# 3. Predictive model building  
-# -----------------------------------------------------------------------------  
+# Optional: Get feature names after transformation (if supported by your sklearn version)
+try:
+    feature_names_out = pipeline.named_steps["preprocessing"].get_feature_names_out()
+    print("\nTransformed Feature Names:")
+    print(feature_names_out)
+except:
+    print("\nNote: `get_feature_names_out()` requires scikit-learn 1.2 or higher.")
+
+print("\nConfirming input shape matches feature names:")
+print("Transformed X_train shape:", X_train_transformed.shape)
+print("Feature names length:", len(feature_names_out))
+
+# -----------------------------------------------------------------------------
+# 3. Predictive model building with Transformed Features
+# -----------------------------------------------------------------------------
+
 from sklearn.linear_model import LogisticRegression
-from sklearn.ensemble import RandomForestClassifier  
-from sklearn.neural_network import MLPClassifier  
-from sklearn.svm import SVC  
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.neural_network import MLPClassifier
+from sklearn.svm import SVC
 from sklearn.neighbors import KNeighborsClassifier
-from sklearn.metrics import accuracy_score, classification_report, confusion_matrix  
-
-# 1. Logistic Regression
-log_model = LogisticRegression(max_iter=1000, random_state=25)
-log_model.fit(X_train_balanced, y_train_balanced)
-log_pred = log_model.predict(X_test)
-
-print("\nLogistic Regression - Accuracy:", accuracy_score(y_test, log_pred))
-print("Confusion Matrix:\n", confusion_matrix(y_test, log_pred))
-print("Classification Report:\n", classification_report(y_test, log_pred))
-
-
-# 2. Random Forest
-rf_model = RandomForestClassifier(random_state=25)
-rf_model.fit(X_train_balanced, y_train_balanced)
-rf_pred = rf_model.predict(X_test)
-
-print("\nRandom Forest - Accuracy:", accuracy_score(y_test, rf_pred))
-print("Confusion Matrix:\n", confusion_matrix(y_test, rf_pred))
-print("Classification Report:\n", classification_report(y_test, rf_pred))
-
-
-# 3. SVM
-svm_model = SVC(probability=True, random_state=25)
-svm_model.fit(X_train_balanced, y_train_balanced)
-svm_pred = svm_model.predict(X_test)
-
-print("\nSVM - Accuracy:", accuracy_score(y_test, svm_pred))
-print("Confusion Matrix:\n", confusion_matrix(y_test, svm_pred))
-print("Classification Report:\n", classification_report(y_test, svm_pred))
-
-
-# 4. Neural Network (MLP)
-nn_model = MLPClassifier(max_iter=1000, random_state=25)
-nn_model.fit(X_train_balanced, y_train_balanced)
-nn_pred = nn_model.predict(X_test)
-
-print("\nNeural Network - Accuracy:", accuracy_score(y_test, nn_pred))
-print("Confusion Matrix:\n", confusion_matrix(y_test, nn_pred))
-print("Classification Report:\n", classification_report(y_test, nn_pred))
-
-
-# 5. K-Nearest Neighbors
-knn_model = KNeighborsClassifier(n_neighbors=5)
-knn_model.fit(X_train_balanced, y_train_balanced)
-knn_pred = knn_model.predict(X_test)
-
-print("\nKNN - Accuracy:", accuracy_score(y_test, knn_pred))
-print("Confusion Matrix:\n", confusion_matrix(y_test, knn_pred))
-print("Classification Report:\n", classification_report(y_test, knn_pred))
-
-# -----------------------------------------------------------------------------
-# 4. Model scoring and evaluation (per model)
-# -----------------------------------------------------------------------------
 from sklearn.metrics import (
     accuracy_score, precision_score, recall_score, f1_score,
     confusion_matrix, classification_report, roc_curve, auc
@@ -563,7 +597,10 @@ print("Confusion Matrix:\n", confusion_matrix(y_test, log_pred))
 print("Classification Report:\n", classification_report(y_test, log_pred))
 fpr, tpr, _ = roc_curve(y_test, log_proba)
 plt.plot(fpr, tpr, label="Logistic Regression (AUC = {:.2f})".format(auc(fpr, tpr)))
-joblib.dump(log_model, "logistic_regression_model.pkl")
+joblib.dump({
+    "model": log_model,
+    "features": final_feature_names
+}, "logistic_regression_model.pkl")
 print("Logistic Regression model saved as 'logistic_regression_model.pkl'")
 print("----------------------------------------")
 
@@ -586,7 +623,10 @@ print("Confusion Matrix:\n", confusion_matrix(y_test, rf_pred))
 print("Classification Report:\n", classification_report(y_test, rf_pred))
 fpr, tpr, _ = roc_curve(y_test, rf_proba)
 plt.plot(fpr, tpr, label="Random Forest (AUC = {:.2f})".format(auc(fpr, tpr)))
-joblib.dump(rf_model, "random_forest_model.pkl")
+joblib.dump({
+    "model": rf_model,
+    "features": final_feature_names
+}, "random_forest_model.pkl")
 print("Random Forest model saved as 'random_forest_model.pkl'")
 print("----------------------------------------")
 
@@ -609,7 +649,11 @@ print("Confusion Matrix:\n", confusion_matrix(y_test, svm_pred))
 print("Classification Report:\n", classification_report(y_test, svm_pred))
 fpr, tpr, _ = roc_curve(y_test, svm_proba)
 plt.plot(fpr, tpr, label="SVM (AUC = {:.2f})".format(auc(fpr, tpr)))
-joblib.dump(svm_model, "svm_model.pkl")
+joblib.dump({
+    "model": svm_model,
+    "features": final_feature_names
+}, "svm_model.pkl")
+
 print("SVM model saved as 'svm_model.pkl'")
 print("----------------------------------------")
 
@@ -632,7 +676,10 @@ print("Confusion Matrix:\n", confusion_matrix(y_test, nn_pred))
 print("Classification Report:\n", classification_report(y_test, nn_pred))
 fpr, tpr, _ = roc_curve(y_test, nn_proba)
 plt.plot(fpr, tpr, label="Neural Network (AUC = {:.2f})".format(auc(fpr, tpr)))
-joblib.dump(nn_model, "neural_network_model.pkl")
+joblib.dump({
+    "model": nn_model,
+    "features": final_feature_names
+}, "neural_network_model.pkl")
 print("Neural Network model saved as 'neural_network_model.pkl'")
 print("----------------------------------------")
 
@@ -656,7 +703,10 @@ print("Confusion Matrix:\n", confusion_matrix(y_test, knn_pred))
 print("Classification Report:\n", classification_report(y_test, knn_pred))
 fpr, tpr, _ = roc_curve(y_test, knn_proba)
 plt.plot(fpr, tpr, label="KNN (AUC = {:.2f})".format(auc(fpr, tpr)))
-joblib.dump(knn_model, "knn_model.pkl")
+joblib.dump({
+    "model": knn_model,
+    "features": final_feature_names
+}, "knn_model.pkl")
 print("KNN model saved as 'knn_model.pkl'")
 print("----------------------------------------")
 
@@ -676,15 +726,19 @@ plt.show()
 # 4.2 Final Model Summary
 # -----------------------------------------------------------------------------
 results_df = pd.DataFrame(model_scores).T.sort_values("F1 Score", ascending=False)
-print("\n----------------------------------------")
-print("Model Performance Summary:")
+
+print("\n")
+print("-------------------------------------------------------------")
+print("Model Performance Summary (sorted by F1 Score):")
 print(results_df)
-print("----------------------------------------")
+print("-------------------------------------------------------------")
 
 best_model = results_df.index[0]
-print("\n----------------------------------------")
+
+print("\n")
+print("-------------------------------------------------------------")
 print(f"Recommended Model: {best_model} (Based on highest F1 Score)")
-print("----------------------------------------")
+print("-------------------------------------------------------------")
 
 
 # print("Top 5 STREET1 values used the most:")
