@@ -10,7 +10,7 @@ import joblib
 
 # Initialize Flask app
 app = Flask(__name__)
-CORS(app)
+CORS(app, origins=["https://ml-client-e3vd.onrender.com"])
 
 # Load all trained models and feature lists
 models = {
