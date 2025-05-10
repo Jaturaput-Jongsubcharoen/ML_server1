@@ -1,4 +1,4 @@
-#app.py
+# app.py
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import joblib
@@ -9,7 +9,7 @@ import os
 
 # Initialize Flask app
 app = Flask(__name__)
-CORS(app, resources={r"/*": {"origins": "*"}})  # ✅ Wildcard origin for Render support
+CORS(app, resources={r"/*": {"origins": "*"}})
 
 # Load models
 models = {
@@ -27,7 +27,6 @@ def home():
 @app.route("/predict", methods=["POST", "OPTIONS"])
 def predict():
     if request.method == "OPTIONS":
-        # ✅ Handle preflight explicitly
         response = jsonify({"message": "Preflight OK"})
         response.headers.add("Access-Control-Allow-Origin", "*")
         response.headers.add("Access-Control-Allow-Headers", "Content-Type")
