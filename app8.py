@@ -1,4 +1,4 @@
-#app.py
+# app.py
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import joblib
@@ -6,13 +6,10 @@ import numpy as np
 import traceback
 import warnings
 
-import joblib
-
-# Initialize Flask app
 app = Flask(__name__)
 CORS(app)
 
-# Load all trained models and feature lists
+# Load all models (each includes model + features)
 models = {
     "random_forest": joblib.load("random_forest_model.pkl"),
     "svm": joblib.load("svm_model.pkl"),
@@ -23,40 +20,39 @@ models = {
 
 @app.route("/")
 def home():
-    return "Machine Learning Model API is running."
+    return "ML Model API is running."
 
 @app.route("/predict", methods=["POST"])
 def predict():
     try:
-        # Get input JSON from request
         data = request.get_json(force=True)
         model_name = data.get("model_name")
         input_data = data.get("input", {})
 
-        print("\nIncoming Payload:", input_data)
+        print("\nIncoming Payload:")
+        print(input_data)
 
-        # Validate model selection
         if model_name not in models:
             return jsonify({"error": f"Invalid model name: {model_name}"}), 400
 
-        # Load model and expected features
-        model_bundle = models[model_name]
-        model = model_bundle["model"]
-        expected_features = model_bundle["features"]
+        # Load model and feature list
+        bundle = models[model_name]
+        model = bundle["model"]
+        expected_features = bundle["features"]
 
         # 🔍 Debug logs
         print("Expected features:", expected_features)
         print("Received fields:", list(input_data.keys()))
 
-        # Check for missing input features
+        # Ensure all required fields are present
         missing = [col for col in expected_features if col not in input_data]
         if missing:
             return jsonify({"error": f"Missing required input fields: {missing}"}), 400
 
-        # Arrange input in the correct order
+        # Construct input row in order
         row = [input_data[col] for col in expected_features]
 
-        # Convert to NumPy array and predict
+        # Predict
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             prediction = int(model.predict([row])[0])
